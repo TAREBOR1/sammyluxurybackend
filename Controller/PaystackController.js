@@ -34,6 +34,8 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_TEST_SECRET_KEY;
   currency: "NGN", // Default is NGN
   callback_url: `${origin}/payment-success`,
   metadata: {
+    userId,
+    bookingId,
     custom_fields: [
       {
         display_name: "Full Name",
@@ -103,13 +105,13 @@ const verifyPayment = async (req, res) => {
  */
   const paystackWebhook = async (req, res) => {
   try {
-    const rawBody = req.body.toString(); // because express.raw gives Buffer
+  
     const signature = req.headers["x-paystack-signature"];
 
     // Verify signature
     const hash = crypto
       .createHmac("sha512", PAYSTACK_SECRET_KEY)
-      .update(rawBody)
+      .update(JSON.stringify(req.body))
       .digest("hex");
 
     if (hash !== signature) {
@@ -117,17 +119,17 @@ const verifyPayment = async (req, res) => {
       return res.status(401).send("Invalid signature");
     }
 
-    const event = JSON.parse(rawBody);
+    const event = req.body;
 
     console.log("✅ Paystack Event Received:", event.event);
 
     if (event.event === "charge.success") {
-      const { reference, amount, customer, metadata } = event.data;
+      const { reference, amount, customer } = event.data;
 
       console.log("💰 Payment Success:", reference, amount, customer.email);
 
       // Get booking & user IDs from metadata (best practice)
-      const { bookingId, userId } = metadata || {};
+      const { bookingId, userId } = event.data.metadata || {};
 
       if (bookingId && userId) {
         const user = await User.findById(userId);
