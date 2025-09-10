@@ -101,39 +101,55 @@ const verifyPayment = async (req, res) => {
  * @desc Handle Paystack Webhooks
  * @route POST /api/paystack/webhook
  */
- const paystackWebhook =async (req, res) => {
+  const paystackWebhook = async (req, res) => {
   try {
-     const {bookingId, userId}=req.body;
-    const user = await User.findById(userId);
-    if (!user){
-         return res.status(404).json({ error: "User not found" });
-    } 
-    
+    const rawBody = req.body.toString(); // because express.raw gives Buffer
+    const signature = req.headers["x-paystack-signature"];
+
+    // Verify signature
     const hash = crypto
       .createHmac("sha512", PAYSTACK_SECRET_KEY)
-      .update(req.body)
+      .update(rawBody)
       .digest("hex");
 
-    if (hash !== req.headers["x-paystack-signature"]) {
+    if (hash !== signature) {
+      console.log("❌ Invalid Paystack signature");
       return res.status(401).send("Invalid signature");
     }
 
-    const event = JSON.parse(req.body);
+    const event = JSON.parse(rawBody);
 
-    console.log('i wan see this one first',event)
+    console.log("✅ Paystack Event Received:", event.event);
 
     if (event.event === "charge.success") {
-      const { reference, amount, customer } = event.data;
-      console.log("Webhook Payment Success:", reference, amount, customer.email);
+      const { reference, amount, customer, metadata } = event.data;
 
-      // ✅ Update DB order status here
-     await Booking.findByIdAndUpdate(bookingId,{$set:{paymentMethod:"paystack",isPaid:true}})
+      console.log("💰 Payment Success:", reference, amount, customer.email);
+
+      // Get booking & user IDs from metadata (best practice)
+      const { bookingId, userId } = metadata || {};
+
+      if (bookingId && userId) {
+        const user = await User.findById(userId);
+
+        if (user) {
+          await Booking.findByIdAndUpdate(bookingId, {
+            $set: { paymentMethod: "paystack", isPaid: true },
+          });
+          console.log("✅ Booking updated successfully");
+        } else {
+          console.log("⚠️ User not found for webhook event");
+        }
+      } else {
+        console.log("⚠️ Metadata missing, cannot update booking");
+      }
     }
 
+    // Always acknowledge receipt to stop retries
     res.sendStatus(200);
   } catch (err) {
     console.error("Webhook error:", err.message);
-    res.sendStatus(500);
+    res.sendStatus(200); // still respond 200 so Paystack doesn’t keep retrying
   }
 };
 
