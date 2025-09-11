@@ -14,7 +14,7 @@ app.use(express.json())
 
 
 app.use(cors({
-    origin:'https://sammyrental.netlify.app/',
+    origin:'https://sammyluxuryhome.netlify.app',
     methods:['GET','POST','PUT','DELETE'],
     allowedHeaders:[
         'Content-Type',
